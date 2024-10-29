@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    
+
+    <title>订单明细</title>
+
+    <link href="../css/rtcrm.min.css" rel="stylesheet">
+    <script src="../js/rtcrm.min.js"></script>
+    <script src="../js/es6_promise.min.js"></script>
+    <script src="../js/vue.min.js"></script>
+    <script src="../components/rtcrm_lookup.js"></script>
+    <script type="text/javascript" src="../../ClientGlobalContext.js.aspx"></script>
+
+</head>
+
+<body style="overflow-wrap: break-word;">
+    <div id="app" class="rt-crm-ListPage" v-cloak="">
+        <!--按钮-->
+        <div class="rt-crm-List-TopContainer">
+            <ul class="rt-crm-RibbonBar">
+                <li class="rt-crm-Ribbon" v-if="new_orderstatus==3||new_orderstatus==4">
+                    <a @click="sendSAP">
+                        <img src="/_imgs/imagestrips/transparent_spacer.gif" class="rt-crm-Icon rt-crm-IconSave">
+                        <span>推单SAP</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- 内容 -->
+        <div class="rt-crm-List-ContentContainer" style="height:350px;padding:0;">
+            <div class="rt-crm-Grid">
+                <div ref="gridHeader" class="rt-crm-GridHeader">
+                    <div class="rt-crm-GridCell">
+                        <img class="rt-crm-Icon rt-crm-IconCheck" src="/_imgs/imagestrips/transparent_spacer.gif"
+                             @click="chooseAll()">
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:80px;">
+                        <span>行项目号</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:140px;">
+                        <span>DN推单状态</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:140px;">
+                        <span>产品系列</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:80px;">
+                        <span>产品型号</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:80px;">
+                        <span>产品编码</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:80px;">
+                        <span>产品名称</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:120px;">
+                        <span>产品数量</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:300px;">
+                        <span>已推单数量</span>
+                    </div>
+                    <div class="rt-crm-GridCell" style="width:80px;">
+                        <span>待推单数量</span>
+                    </div>
+                </div>
+
+                <div class="rt-crm-GridBody" ref="gridBody" @scroll="gridBodyScroll">
+                    <div v-for="(line,index) in orderlineList" v-bind:key=""
+                         v-bind:class="line.checked===true?'rt-crm-GridRowSelected':'rt-crm-GridRow'" @dblclick="openLine(index)"
+                         @click="selectLine(index)">
+                        <div class="rt-crm-GridCell">
+                            <img v-bind:class="line.checked ? 'rt-crm-Icon rt-crm-IconCheck' : ''"
+                                 src="/_imgs/imagestrips/transparent_spacer.gif">
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:80px;">
+                            <span>{{line.new_seq}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:140px;">
+                            <span>{{line.new_dnstatustext}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:140px;">
+                            <span>
+                                {{line.new_productgroup_idtext}}
+                            </span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:80px;">
+                            <span>{{line.new_productmodel_idtext}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:80px;">
+                            <span>{{line.new_productno}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:80px;">
+                            <span>
+                                {{line.new_product_idtext}}
+                            </span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:120px;">
+                            <span>{{line.new_qty}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:300px;">
+                            <span>{{line.new_alreadypushednumber}}</span>
+                        </div>
+                        <div class="rt-crm-GridCell" style="width:80px;">
+                            <span>{{line.new_unpushnumber}}</span>
+                        </div>
+                        <div class="rt-crm-GridDataLoad" v-if="orderlineList.length===0 &amp;&amp; !isLoading">当前无可查看记录</div>
+                        <div class="rt-crm-GridDataLoad" v-if="orderlineList.length===0 &amp;&amp; isLoading">数据加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        var app = new Vue({
+            el: '#app',
+            data: {
+                orderlineList: [],
+                new_approvalstatus: 1,
+                new_orderstatus: 1,
+                new_ordertype: 0,
+                new_stockstatus: 0, //库存状态
+                new_revisionnumber: 0,
+                new_new_cpq_quote_id: '',
+                new_erpcode: '',
+                isContractOrQuoteOrder: false,
+                isContract: false,
+                isLoading: false,
+                isShow: true,
+                new_account_id: '',
+                updatedata: [],
+                oldOrderLineList: [],
+                filter: "",
+                qty: 0,
+            },
+            mounted: function () {
+                var orderId = this.getOrderId();
+                console.log(orderId);
+                //debugger;
+                //var quoteId = window.parent.Xrm.Page.getAttribute("new_quote_id").getValue();
+                //  if (quoteId) {
+                //      this.isShow = false
+                //  } else {
+                this.isShow = true
+                //}
+                if (orderId) {
+                    var new_ord_saleorder = rtcrm.getFieldValue(orderId, "new_ord_saleorders",
+                        "new_approvalstatus,new_ordertype,new_erpcode,new_revisionnumber,new_orderstatus,_new_contract_id_value,_new_quote_id_value,_new_new_cpq_quote_id_value,_new_account_id_value,new_stockstatus",
+                        true);
+                    console.log(new_ord_saleorder);
+                    this.new_approvalstatus = new_ord_saleorder.new_approvalstatus;
+                    this.new_erpcode = new_ord_saleorder.new_erpcode;
+                    this.new_ordertype = new_ord_saleorder.new_ordertype;
+                    this.new_orderstatus = new_ord_saleorder.new_orderstatus;
+                    this.new_stockstatus = new_ord_saleorder.new_stockstatus;
+                    this.new_revisionnumber = new_ord_saleorder.new_revisionnumber;
+                    this.new_new_cpq_quote_id = new_ord_saleorder._new_new_cpq_quote_id_value;
+                    this.new_account_id = new_ord_saleorder._new_account_id_value;
+                    console.log("new_accountid:" + this.new_account_id);
+                    this.retrieveSaleOrderLines();
+                }
+                //this.sort();
+                //this.refresh();
+            },
+            methods: {
+                getOrderId: function () {
+                    var orderId = rtcrm.getUrlParam("id");
+                    if (orderId && orderId != 2052) {
+                        orderId = decodeURIComponent(orderId);
+                    } else {
+                        orderId = window.parent.Xrm.Page.data.entity.getId();
+                    }
+                    orderId = orderId.replace("{", "").replace("}", "");
+                    return orderId;
+                },
+                gridBodyScroll: function () {
+                    this.$refs.gridHeader.scrollLeft = this.$refs.gridBody.scrollLeft;
+                },
+                //获取订单明细
+                retrieveSaleOrderLines: function () {
+                    if (this.isLoading) {
+                        return;
+                    }
+
+                    var orderId = this.getOrderId();
+
+                    if (rtcrm.isNullOrWhiteSpace(orderId)) {
+                        return;
+                    }
+
+                    this.isLoading = true;
+
+                    var that = this;
+                    var getlinefetchxml = `<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>
+                                              <entity name='new_ord_saleorderline'>                                
+                                                <attribute name='new_name' />                                      
+                                                <attribute name='createdon' />                                     
+                                                <attribute name='new_ord_saleorderlineid' />                       
+                                                <attribute name='new_seq' />                                       
+                                                <attribute name='new_qty' />                                       
+                                                <attribute name='new_unpushnumber' />                              
+                                                <attribute name='new_alreadypushednumber' />                       
+                                                <attribute name='new_productno' />                                 
+                                                <attribute name='new_productgroup_id' />                           
+                                                <attribute name='new_productmodel_id' />                           
+                                                <attribute name='new_product_id' />                                
+                                                <attribute name='new_dnstatus' />                                  
+                                                <order attribute='new_name' descending='false' />                  
+                                                <filter type='and'>                                                
+                                                  <condition attribute='new_ord_salesorder_id' operator='eq' uitype='new_ord_saleorder' value='{`+ orderId +`}' />
+                                                  <condition attribute='statecode' operator='eq' value='0' />
+                                                </filter>
+                                              </entity>
+                                            </fetch>`;
+                    try {
+                        var res = rtcrm.fetch("new_ord_saleorderlines", getlinefetchxml, true);
+                        console.log('11', res);
+                        if (res != null && res.length > 0) {
+                            this.orderlineList = [];
+                            var that = this;
+                            res.forEach(function (e) {
+                                var line = {
+                                    id: e.new_ord_saleorderlineid,
+                                    new_seq: e.new_seq,
+                                    new_dnstatustext: e["new_dnstatus@OData.Community.Display.V1.FormattedValue"],
+                                    new_productgroup_idtext: e["_new_productgroup_id_value@OData.Community.Display.V1.FormattedValue"],
+                                    new_productmodel_idtext: e["_new_productmodel_id_value@OData.Community.Display.V1.FormattedValue"],
+                                    new_productno: e.new_productno,
+                                    new_product_idtext: e["_new_product_id_value@OData.Community.Display.V1.FormattedValue"],
+                                    new_qty: e.new_qty,
+                                    new_alreadypushednumber: e.new_alreadypushednumber,
+                                    new_unpushnumber: e.new_unpushnumber
+                                }
+                                that.orderlineList.push(line);
+                            });
+                            this.isLoading = false;
+                        }
+                        
+                    } catch (e) {
+                        that.isLoading = false;
+                        rtcrm.alertDialog(e);
+                    }
+                    
+                    window.parent.Xrm.Page.data.refresh();
+                    //this.refresh();
+                },
+                sendSAP: function () {
+                    try {
+                        var ids = [];
+                        this.orderlineList.forEach(e => {
+                            if (e.checked == true) {
+                                ids.push(e.id);
+                            }
+                        })
+                        if (ids && ids.length == 0) {
+                            alert("请选择明细行");
+                        }
+                        if (ids && ids.length > 25) {
+                            alert("超出最大选择明细行：25行！请重新选择。");
+                        }
+                        parent.Xrm.Utility.showProgressIndicator("正在检查中...");
+                        var res = rtcrm.invokeHiddenApi("new_order", "order/CheckOrderLineStatus", { ids: ids });
+                        if (res != null && res != undefined) {
+                            console.log('res', res);
+                            parent.Xrm.Utility.closeProgressIndicator();
+                            if (res.Code && res.Code == "1") {
+                                alert("检查通过");
+                                var param = "ids=" + ids.join()
+                                rtcrm.openWebResource("new_/ordermanagement/new_ord_saleorderline_sendorder.html", encodeURIComponent(param), 1260, 600);
+                            } else {
+                                alert("检查不通过，错误信息为：" + res.Description);
+                            }
+                        }
+                    } catch (e) {
+                        alert(e.message);
+                        parent.Xrm.Utility.closeProgressIndicator();
+                    }
+                },
+                formatDecimal: function (s, n) {
+                    return rtcrm.formatDecimal(s, n);
+                },
+                //全选
+                chooseAll: function () {
+                    //var orderlineList = Object.assign({}, this.orderlineList);
+                    for (var index in this.orderlineList) {
+                        var orderline = this.orderlineList[index];
+                        if (rtcrm.isNull(orderline.checked)) {
+                            orderline.checked = true;
+                        } else {
+                            orderline.checked = !orderline.checked;
+                        }
+
+                        Vue.set(this.orderlineList, index, orderline);
+                    }
+
+                    //this.orderlineList = orderlineList;
+                },
+                //单选
+                selectLine: function (index) {
+                    var orderline = this.orderlineList[index];
+                    console.log(orderline)
+                    if (rtcrm.isNull(orderline.checked)) {
+                        orderline.checked = true;
+                    } else {
+                        orderline.checked = !orderline.checked;
+                    }
+
+                    Vue.set(this.orderlineList, index, orderline);
+                },
+                openLine: function (index) {
+                    var orderline = this.orderlineList[index];
+
+                    window.parent.Xrm.Utility.openEntityForm("new_ord_saleorderline", orderline
+                        .id);
+                },
+                refresh: function () {
+                    window.parent.Xrm.Page.data.refresh(); //刷新父窗口中的网页
+
+                    this.retrieveSaleOrderLines();
+                }
+            }
+        })
+
+        function refresh() {
+            app.refresh();
+        }
+    </script>
+
+
+
+    <style type="text/css">
+        [v-cloak] {
+            display: none !important;
+            /*防止被覆盖*/
+        }
+
+        .rt-crm-LookupTitle {
+            margin-bottom: 2px
+        }
+
+        .rt-crm-LookupSearch {
+            margin-bottom: 2px
+        }
+
+        .rt-crm-LookupBottom {
+            bottom: 30px
+        }
+    </style>
+</body>
+
+</html>
